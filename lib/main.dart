@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'bd/resultado.dart';
 import 'class/pessoa.dart'; 
 import 'process/validacoes.dart'; 
 
-void main() {
+void main() async {
+  await Hive.initFlutter();
+  Hive.registerAdapter(ResultadoAdapter());
+  await Hive.openBox<Resultado>('resultados');
   runApp(CalculadoraIMCApp());
 }
 
@@ -12,6 +17,11 @@ class CalculadoraIMCApp extends StatelessWidget {
     return MaterialApp(
       title: 'Calculadora IMC',
       theme: ThemeData(
+        primarySwatch: Colors.teal,
+        colorScheme: ColorScheme.fromSwatch(
+          primarySwatch: Colors.teal,
+          accentColor: Colors.orange,
+        ),
         inputDecorationTheme: const InputDecorationTheme(
           border: OutlineInputBorder(),
           focusedBorder: OutlineInputBorder(
@@ -44,8 +54,8 @@ class _CalculadoraIMCPageState extends State<CalculadoraIMCPage> {
   final _pesoController = TextEditingController();
   final _alturaController = TextEditingController();
   String _resultado = '';
-  List<Map<String, String>> _resultados = [];
-  
+  final Box<Resultado> _resultadosBox = Hive.box<Resultado>('resultados');
+
   void _calcularIMC() {
     final nome = _nomeController.text;
     final peso = double.tryParse(_pesoController.text);
@@ -59,36 +69,34 @@ class _CalculadoraIMCPageState extends State<CalculadoraIMCPage> {
       setState(() {
         _resultado = nomeErro;
       });
-      return;      
+      return;
     } else if (pesoErro.isNotEmpty) {
       setState(() {
         _resultado = pesoErro;
       });
-      return;        
+      return;
     } else if (alturaErro.isNotEmpty) {
       setState(() {
         _resultado = alturaErro;
       });
-      return;        
-    }        
+      return;
+    }
 
     final pessoa = Pessoa(nome, peso!, altura!);
     final imc = pessoa.calcularIMC();
     final classificacao = pessoa.classificacaoIMC(imc);
 
+    final resultado = Resultado(nome: nome, imc: imc, classificacao: classificacao);
+    _resultadosBox.add(resultado);
+
     setState(() {
       _resultado = '';
-      _resultados.insert(0, {
-        'Nome': nome,
-        'IMC': imc.toStringAsFixed(2),
-        'Classificação': classificacao,
-      });
     });
 
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ResultadosPage(resultados: _resultados),
+        builder: (context) => ResultadosPage(),
       ),
     );
   }
@@ -107,21 +115,21 @@ class _CalculadoraIMCPageState extends State<CalculadoraIMCPage> {
             TextField(
               controller: _nomeController,
               decoration: InputDecoration(labelText: 'Nome'),
-              style: const TextStyle(color: Colors.teal),
+              style: TextStyle(color: Colors.teal), 
             ),
             SizedBox(height: 10),
             TextField(
               controller: _pesoController,
               decoration: InputDecoration(labelText: 'Peso (kg)'),
               keyboardType: TextInputType.numberWithOptions(decimal: true),
-              style: const TextStyle(color: Colors.teal),
+              style: TextStyle(color: Colors.teal), 
             ),
             SizedBox(height: 10),
             TextField(
               controller: _alturaController,
               decoration: InputDecoration(labelText: 'Altura (m)'),
               keyboardType: TextInputType.numberWithOptions(decimal: true),
-              style: const TextStyle(color: Colors.teal),
+              style: TextStyle(color: Colors.teal),
             ),
             SizedBox(height: 20),
             ElevatedButton(
@@ -143,9 +151,7 @@ class _CalculadoraIMCPageState extends State<CalculadoraIMCPage> {
 }
 
 class ResultadosPage extends StatelessWidget {
-  final List<Map<String, String>> resultados;
-
-  ResultadosPage({required this.resultados});
+  final Box<Resultado> _resultadosBox = Hive.box<Resultado>('resultados');
 
   @override
   Widget build(BuildContext context) {
@@ -155,36 +161,86 @@ class ResultadosPage extends StatelessWidget {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: GridView.builder(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-          ),
-          itemCount: resultados.length,
-          itemBuilder: (context, index) {
-            final resultado = resultados[index];
-            return Card(
-              color: Colors.teal[50],
-              elevation: 5,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+        child: ValueListenableBuilder(
+          valueListenable: _resultadosBox.listenable(),
+          builder: (context, Box<Resultado> box, _) {
+            final resultados = box.values.toList().cast<Resultado>();
+            return GridView.builder(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: resultado.entries.map((entry) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4.0),
-                      child: Text(
-                        '${entry.key}: ${entry.value}',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.teal[800]),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
+              itemCount: resultados.length,
+              itemBuilder: (context, index) {
+                final resultado = resultados[index];
+                return Card(
+                  color: Colors.white, 
+                  elevation: 5,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        RichText(
+                          text: TextSpan(
+                            text: 'Nome: ',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold, 
+                              color: Colors.teal[800], 
+                            ),
+                            children: <TextSpan>[
+                              TextSpan(
+                                text: resultado.nome,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.normal, 
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        RichText(
+                          text: TextSpan(
+                            text: 'IMC: ',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold, 
+                              color: Colors.teal[800], 
+                            ),
+                            children: <TextSpan>[
+                              TextSpan(
+                                text: resultado.imc.toStringAsFixed(2),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.normal, 
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        RichText(
+                          text: TextSpan(
+                            text: 'Classificação: ',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold, 
+                              color: Colors.teal[800], 
+                            ),
+                            children: <TextSpan>[
+                              TextSpan(
+                                text: resultado.classificacao,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.normal, 
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             );
           },
         ),
